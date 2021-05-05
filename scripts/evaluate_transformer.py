@@ -20,7 +20,7 @@ import pct as MODEL
 # DEFAULT SETTINGS
 parser = argparse.ArgumentParser()
 parser.add_argument('--gpu', type=int, default=0, help='GPUs to use [default: 0]')
-parser.add_argument('--model_path', default='PU', help='Model checkpoint path')
+parser.add_argument('--model_path', default='', help='Model checkpoint path')
 parser.add_argument('--batch', type=int, default=64, help='Batch Size  during training [default: 64]')
 parser.add_argument('--num_point', type=int, default=100, help='Point Number [default: 500]')
 parser.add_argument('--data_dir', default='/pnfs/psi.ch/cms/trivcat/store/user/vmikuni/EMD_SF/', help='directory with data')
@@ -30,6 +30,7 @@ parser.add_argument('--name', default="", help='name of the output file')
 parser.add_argument('--h5_folder', default="../h5/", help='folder to store output files')
 parser.add_argument('--sample', default='qg', help='sample to use')
 parser.add_argument('--simple', action='store_true', default=False,help='Use simplified model')
+parser.add_argument('--log_dir', default='log', help='Log dir [default: log in logs]')
 
 FLAGS = parser.parse_args()
 MODEL_PATH = FLAGS.model_path
@@ -37,6 +38,10 @@ DATA_DIR = FLAGS.data_dir
 H5_DIR = os.path.join(BASE_DIR, DATA_DIR)
 H5_OUT = FLAGS.h5_folder
 if not os.path.exists(H5_OUT): os.mkdir(H5_OUT)  
+LOG_DIR = os.path.join('../logs/',FLAGS.log_dir)
+if not os.path.exists(LOG_DIR): 
+    print('LOG_DIR does not exist:',LOG_DIR)
+    quit()
 
 # MAIN SCRIPT
 NUM_POINT = FLAGS.num_point
@@ -63,6 +68,10 @@ elif SAMPLE == 'top':
 elif SAMPLE == 'multi':
     multi = True
     EVALUATE_FILE = os.path.join(DATA_DIR, 'eval_multi_100P_Jedi.h5')
+elif SAMPLE == 'best':
+    multi = True
+    #EVALUATE_FILE = os.path.join(DATA_DIR, 'eval_multi_100P_Jedi.h5')
+    EVALUATE_FILE = [os.path.join(DATA_DIR, mySamp+'Sample_2017_BESTinputs_test_flattened_standardized.h5') for mySamp in ["WW","ZZ","HH","TT","QCD","BB"]]
 else:
     sys.exit("ERROR: SAMPLE NOT FOUND")
 
@@ -90,7 +99,7 @@ def eval():
         config.allow_soft_placement = True
         sess = tf.Session(config=config)
 
-        saver.restore(sess,os.path.join('../logs',MODEL_PATH,'model.ckpt'))
+        saver.restore(sess,os.path.join(LOG_DIR,MODEL_PATH,'model.ckpt'))
         print('model restored')
         
         
@@ -116,8 +125,8 @@ def eval_one_epoch(sess,ops):
     is_training = False
     y_pred = []
     
-    current_data_pl, current_label = provider.load_h5(EVALUATE_FILE,'class')
-    if multi:
+    current_data_pl, current_label = provider.load_h5BEST(EVALUATE_FILE)
+    if multi and not SAMPLE == 'best':
         current_label=np.argmax(current_label,axis=-1)
     file_size = current_data_pl.shape[0]
     num_batches = file_size // BATCH_SIZE        

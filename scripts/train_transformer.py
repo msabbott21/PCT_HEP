@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser()
 
 parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 0]')
 parser.add_argument('--model', default='pct', help='Model name [default: pct]')
-parser.add_argument('--log_dir', default='../log', help='Log dir [default: log]')
+parser.add_argument('--log_dir', default='log', help='Log dir [default: log in logs]')
 parser.add_argument('--num_point', type=int, default=100, help='Point Number  [default: 100]')
 parser.add_argument('--max_epoch', type=int, default=200, help='Epoch to run [default: 200]')
 parser.add_argument('--batch_size', type=int, default=32, help='Batch Size during training [default: 32]')
@@ -60,7 +60,7 @@ DECAY_STEP = FLAGS.decay_step
 DECAY_RATE = FLAGS.decay_rate
 
 MODEL_FILE = os.path.join(BASE_DIR, '..', 'models',FLAGS.model+'.py')
-LOG_DIR = os.path.join('../logs',FLAGS.log_dir)
+LOG_DIR = os.path.join('../logs/',FLAGS.log_dir)
 
 if not os.path.exists(LOG_DIR): os.makedirs(LOG_DIR)
 os.system('cp %s %s' % (MODEL_FILE, LOG_DIR)) # bkp of model def
@@ -89,6 +89,11 @@ elif SAMPLE == 'multi':
     multi = True
     TRAIN_FILE = os.path.join(DATA_DIR, 'train_multi_100P_Jedi.h5')
     TEST_FILE = os.path.join(DATA_DIR, 'test_multi_100P_Jedi.h5')
+
+elif SAMPLE == 'best':
+    multi = True
+    TRAIN_FILE = [os.path.join(DATA_DIR, mySamp+'Sample_2017_BESTinputs_train_flattened_standardized.h5') for mySamp in ["WW","ZZ","HH","TT","QCD","BB"]]
+    TEST_FILE = [os.path.join(DATA_DIR, mySamp+'Sample_2017_BESTinputs_validation_flattened_standardized.h5') for mySamp in ["WW","ZZ","HH","TT","QCD","BB"]]
 else:
     sys.exit("ERROR: SAMPLE NOT FOUND")
     
@@ -243,10 +248,13 @@ def train_one_epoch(sess, ops, train_writer):
     
     loss_sum = 0
 
-    current_data_pl, current_label = provider.load_h5(TRAIN_FILE,'class')    
-    #,nevts=5e5
-    if multi:
-        current_label=np.argmax(current_label,axis=-1)
+    if SAMPLE == 'best':
+        current_data_pl, current_label = provider.load_h5BEST(TRAIN_FILE)
+    else:
+        current_data_pl, current_label = provider.load_h5(TRAIN_FILE,'class')    
+        #,nevts=5e5
+        if multi:
+            current_label=np.argmax(current_label,axis=-1)
     current_data_pl, current_label, _ = provider.shuffle_data(current_data_pl, np.squeeze(current_label))
 
 
@@ -293,9 +301,12 @@ def eval_one_epoch(sess, ops, test_writer):
     loss_sum = 0
     y_source=[]
 
-    current_data_pl, current_label = provider.load_h5(TEST_FILE,'class')
-    if multi:
-        current_label=np.argmax(current_label,axis=-1)
+    if SAMPLE == 'best':
+        current_data_pl, current_label = provider.load_h5BEST(TEST_FILE)
+    else:
+        current_data_pl, current_label = provider.load_h5(TEST_FILE,'class')
+        if multi:
+            current_label=np.argmax(current_label,axis=-1)
     current_data_pl, current_label, _ = provider.shuffle_data(current_data_pl, np.squeeze(current_label))
 
     file_size = current_data_pl.shape[0]
@@ -346,14 +357,23 @@ def eval_one_epoch(sess, ops, test_writer):
             
 
     if multi:
-        name_convert = {
-            0:'Gluon',
-            1:'Quark',
-            2:'Z',
-            3:'W',
-            4:'Top',
-            
-        }
+        if SAMPLE=="best":
+            name_convert = {
+                0:'W',
+                1:'Z',
+                2:'H',
+                3:'T',
+                4:'QCD',
+                5:'B'
+            }
+        else:
+            name_convert = {
+                0:'Gluon',
+                1:'Quark',
+                2:'Z',
+                3:'W',
+                4:'Top',
+            }
         label = current_label[:num_batches*(BATCH_SIZE)]
         for isample in np.unique(label):            
             fpr, tpr, _ = metrics.roc_curve(label==isample, y_source[:,isample], pos_label=1)    
