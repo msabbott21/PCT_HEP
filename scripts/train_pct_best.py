@@ -28,7 +28,7 @@ parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU
 parser.add_argument('--model', default='pct', help='Model name [default: pct]')
 parser.add_argument('--log_dir', default='bes_dev', help='Log dir [default: log]')
 parser.add_argument('--num_point', type=int, default=100, help='Point Number  [default: 100]')
-parser.add_argument('--num_bes', type=int, default=142, help='Number of BES variables  [default: 142]')
+parser.add_argument('--num_bes', type=int, default=166, help='Number of BES variables  [default: 142]')
 parser.add_argument('--max_epoch', type=int, default=200, help='Epoch to run [default: 200]')
 parser.add_argument('--batch_size', type=int, default=32, help='Batch Size during training [default: 32]')
 parser.add_argument('--learning_rate', type=float, default=1e-3, help='Initial learning rate [default: 0.001]')
@@ -94,8 +94,9 @@ elif SAMPLE == 'multi':
     TEST_FILE = os.path.join(DATA_DIR, 'test_multi_100P_Jedi.h5')
 
 elif SAMPLE == 'bes':
-    TRAIN_FILE = os.path.join(DATA_DIR, 'HHSample_2017_BESTinputs_validation_flattened_standardized_tiny.h5')
-    TEST_FILE = os.path.join(DATA_DIR, 'HHSample_2017_BESTinputs_validation_flattened_standardized_tiny.h5')
+    TRAIN_FILE = [os.path.join(DATA_DIR, mySamp+'Sample_2017_BESTinputs_train_flattened_standardized.h5') for mySamp in ["WW","ZZ","HH","TT","QCD","BB"]]
+    TEST_FILE = [os.path.join(DATA_DIR, mySamp+'Sample_2017_BESTinputs_validation_flattened_standardized.h5') for mySamp in ["WW","ZZ","HH","TT","QCD","BB"]]
+
 
 else:
     sys.exit("ERROR: SAMPLE NOT FOUND")
