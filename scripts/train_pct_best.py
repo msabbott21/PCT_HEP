@@ -28,7 +28,7 @@ parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU
 parser.add_argument('--model', default='pct', help='Model name [default: pct]')
 parser.add_argument('--log_dir', default='bes_dev', help='Log dir [default: log]')
 parser.add_argument('--num_point', type=int, default=100, help='Point Number  [default: 100]')
-parser.add_argument('--num_bes', type=int, default=166, help='Number of BES variables  [default: 142]')
+parser.add_argument('--num_bes', type=int, default=123, help='Number of BES variables  [default: 142]')
 parser.add_argument('--max_epoch', type=int, default=200, help='Epoch to run [default: 200]')
 parser.add_argument('--batch_size', type=int, default=32, help='Batch Size during training [default: 32]')
 parser.add_argument('--learning_rate', type=float, default=1e-3, help='Initial learning rate [default: 0.001]')
@@ -351,7 +351,7 @@ def train_one_epoch(sess, ops, train_writer):
         end_idx = (batch_idx+1) * (BATCH_SIZE)
         batch_data, batch_label = get_batch(data, label,start_idx, end_idx)
         mask_padded = batch_data['lab'][:,:,2]==0 
-
+        #print("Batch bes",len(batch_data['bes']),len(batch_data['bes'][0]))
 
         
         feed_dict = {             
