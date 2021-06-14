@@ -249,7 +249,7 @@ def train_one_epoch(sess, ops, train_writer):
     loss_sum = 0
 
     if SAMPLE == 'best':
-        current_data_pl, current_label = provider.load_h5BEST(TRAIN_FILE)
+        current_data_pl, current_label = provider.load_h5BEST(TRAIN_FILE, NUM_POINT)
     else:
         current_data_pl, current_label = provider.load_h5(TRAIN_FILE,'class')    
         #,nevts=5e5
@@ -302,7 +302,7 @@ def eval_one_epoch(sess, ops, test_writer):
     y_source=[]
 
     if SAMPLE == 'best':
-        current_data_pl, current_label = provider.load_h5BEST(TEST_FILE)
+        current_data_pl, current_label = provider.load_h5BEST(TEST_FILE, NUM_POINT)
     else:
         current_data_pl, current_label = provider.load_h5(TEST_FILE,'class')
         if multi:

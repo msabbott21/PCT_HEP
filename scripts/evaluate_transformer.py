@@ -125,7 +125,7 @@ def eval_one_epoch(sess,ops):
     is_training = False
     y_pred = []
     
-    current_data_pl, current_label = provider.load_h5BEST(EVALUATE_FILE)
+    current_data_pl, current_label = provider.load_h5BEST(EVALUATE_FILE, NUM_POINT)
     if multi and not SAMPLE == 'best':
         current_label=np.argmax(current_label,axis=-1)
     file_size = current_data_pl.shape[0]

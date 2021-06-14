@@ -158,29 +158,30 @@ def load_h5(h5_filename,mode='seg',unsup=False,glob=False,nevts=-1):
   print("loaded {0} events".format(len(data)))
   return (data, label)
 
-def load_h5BEST(h5_filenames,nevts=-1):
-  #print("load_h5BEST")
+def load_h5BEST(h5_filenames,num_points,nevts=-1):
+  #print("load_h5BEST",num_points)
   fs = [h5py.File(h5_filename,'r') for h5_filename in h5_filenames]
   nevts=int(nevts)
+  nPFcands = num_points
   #print("Make data") # The indices are 0-deltaEta, 9-deltaPhi, 6-pdgid, 7-charge, 2-px, 3-py, 5-pz, 1-e
-  data_knn = [f['LabFrame_PFcands'][:nevts][...,[0,9]] for f in fs] # deltaEta and deltaPhi
+  data_knn = [f['LabFrame_PFcands'][:nevts,0:nPFcands][...,[0,9]] for f in fs] # deltaEta and deltaPhi
   #print("data_knn",np.array(data_knn).shape, np.array(data_knn[0]).shape, np.array(data_knn[0][0]).shape, np.array(data_knn[0][0][0]).shape)
-  data_deltaR = [np.sqrt(f['LabFrame_PFcands'][:nevts][...,0]**2 + f['LabFrame_PFcands'][:nevts][...,9]**2) for f in fs] # sqrt(deltaEta^2+deltaPhi^2)
+  data_deltaR = [np.sqrt(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,0]**2 + f['LabFrame_PFcands'][:nevts,0:nPFcands][...,9]**2) for f in fs] # sqrt(deltaEta^2+deltaPhi^2)
   #print("data_deltaR", np.array(data_deltaR).shape, np.array(data_deltaR[0]).shape, np.array(data_deltaR[0][0]).shape, np.array(data_deltaR[0][0][0]).shape)
   data_logRelativeE = []
   data_logRelativePt = []
   data_logE = []
   data_logPt = []
   for f in fs:
-    data_f_logRelativeE = np.zeros(np.array(f['LabFrame_PFcands'][:nevts][...,1]).shape)
+    data_f_logRelativeE = np.zeros(np.array(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,1]).shape)
     data_f_logRelativePt = np.zeros(data_f_logRelativeE.shape)
-    data_f_logE = np.zeros(np.array(f['LabFrame_PFcands'][:nevts][...,1]).shape)
+    data_f_logE = np.zeros(np.array(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,1]).shape)
     data_f_logPt = np.zeros(data_f_logE.shape)
     for event in range(nevts):
-      pfTempRelE = np.zeros(100)
-      pfTempRelPt = np.zeros(100)
-      pfTempE = np.zeros(100)
-      pfTempPt = np.zeros(100)
+      pfTempRelE = np.zeros(nPFcands)
+      pfTempRelPt = np.zeros(nPFcands)
+      pfTempE = np.zeros(nPFcands)
+      pfTempPt = np.zeros(nPFcands)
       for pfCand in range(len(pfTemp)):
         if f['LabFrame_PFcands'][event][pfCand][1] > 0:
           pfTempRelE[pfCand] = np.log(np.divide(f['LabFrame_PFcands'][event][pfCand][1],f['BES_vars'][event][23]))
@@ -206,17 +207,17 @@ def load_h5BEST(h5_filenames,nevts=-1):
   #data_logPt = [np.log(np.sqrt((f['LabFrame_PFcands'][:nevts][...,2]**2 + f['LabFrame_PFcands'][:nevts][...,3]**2))) for f in fs] # px, py
   #data_logE = [np.log(f['LabFrame_PFcands'][:nevts][...,1]) for f in fs] # e
   
-  data_isElectron = [abs(f['LabFrame_PFcands'][:nevts][...,6])==11 for f in fs]
+  data_isElectron = [abs(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,6])==11 for f in fs]
   #print("data_isElectron", np.array(data_isElectron).shape, np.array(data_isElectron[0]).shape, np.array(data_isElectron[0][0]).shape, np.array(data_isElectron[0][0][0]).shape)
-  data_isMuon = [abs(f['LabFrame_PFcands'][:nevts][...,6])==13 for f in fs]
+  data_isMuon = [abs(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,6])==13 for f in fs]
   #print("data_isMuon", np.array(data_isMuon).shape, np.array(data_isMuon[0]).shape, np.array(data_isMuon[0][0]).shape, np.array(data_isMuon[0][0][0]).shape)
-  data_isChargedHadron = [(abs(f['LabFrame_PFcands'][:nevts][...,6])==211) | (abs(f['LabFrame_PFcands'][:nevts][...,6])==321) for f in fs]
+  data_isChargedHadron = [(abs(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,6])==211) | (abs(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,6])==321) for f in fs]
   #print("data_isChargedHadron", np.array(data_isChargedHadron).shape, np.array(data_isChargedHadron[0]).shape, np.array(data_isChargedHadron[0][0]).shape, np.array(data_isChargedHadron[0][0][0]).shape)
-  data_isNeutralHadron = [(abs(f['LabFrame_PFcands'][:nevts][...,6])==111) | (abs(f['LabFrame_PFcands'][:nevts][...,6])==130) | (abs(f['LabFrame_PFcands'][:nevts][...,6])==310) | (abs(f['LabFrame_PFcands'][:nevts][...,6])==311) for f in fs]
+  data_isNeutralHadron = [(abs(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,6])==111) | (abs(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,6])==130) | (abs(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,6])==310) | (abs(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,6])==311) for f in fs]
   #print("data_isNeutralHadron", np.array(data_isNeutralHadron).shape, np.array(data_isNeutralHadron[0]).shape, np.array(data_isNeutralHadron[0][0]).shape, np.array(data_isNeutralHadron[0][0][0]).shape)
-  data_isPhoton = [abs(f['LabFrame_PFcands'][:nevts][...,6])==22 for f in fs]
+  data_isPhoton = [abs(f['LabFrame_PFcands'][:nevts,0:nPFcands][...,6])==22 for f in fs]
   #print("data_isPhoton", np.array(data_isPhoton).shape, np.array(data_isPhoton[0]).shape, np.array(data_isPhoton[0][0]).shape, np.array(data_isPhoton[0][0][0]).shape)
-  data_charge = [f['LabFrame_PFcands'][:nevts][...,7] for f in fs]
+  data_charge = [f['LabFrame_PFcands'][:nevts,0:nPFcands][...,7] for f in fs]
   #print("data_charge", np.array(data_charge).shape, np.array(data_charge[0]).shape, np.array(data_charge[0][0]).shape, np.array(data_charge[0][0][0]).shape)
   data = [np.concatenate((data_knn[i], np.expand_dims(data_deltaR[i],axis=2), np.expand_dims(data_logRelativeE[i],axis=2), np.expand_dims(data_logRelativePt[i],axis=2), np.expand_dims(data_isElectron[i],axis=2), np.expand_dims(data_isMuon[i],axis=2), np.expand_dims(data_isChargedHadron[i],axis=2), np.expand_dims(data_isNeutralHadron[i],axis=2), np.expand_dims(data_isPhoton[i],axis=2), np.expand_dims(data_charge[i],axis=2), np.expand_dims(data_logPt[i],axis=2), np.expand_dims(data_logE[i],axis=2)),axis=2) for i in range(0,len(fs))]
   #print("data", np.array(data).shape, np.array(data[0]).shape, np.array(data[0][0]).shape, np.array(data[0][0][0]).shape)
