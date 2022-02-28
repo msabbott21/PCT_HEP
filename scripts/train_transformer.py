@@ -1,7 +1,10 @@
 import argparse
+from ctypes import BigEndianStructure
 import math
+import random
 import subprocess
 from datetime import datetime
+from datetime import timedelta
 import numpy as np
 import tensorflow as tf
 from tensorflow.contrib.framework import get_variables
@@ -12,6 +15,8 @@ import sys
 import time
 from sklearn import metrics
 
+startTime = time.time() # Tracks how long script takes
+
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(BASE_DIR)
@@ -20,27 +25,42 @@ sys.path.append(os.path.join(BASE_DIR,'..' ,'utils'))
 import provider
 import pct as MODEL
 
+# plot everything on the log txt;
+#   AUC for each cat vs. epochs; avg? (look at Brendans code?)
+#   signal eff vs epochs
+#   back eff vs. epochs
+#   mean loss & val loss vs. epochs
+#   
+
 
 parser = argparse.ArgumentParser()
 
 
 parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 0]')
 parser.add_argument('--model', default='pct', help='Model name [default: pct]')
-parser.add_argument('--log_dir', default='../log', help='Log dir [default: log]')
-parser.add_argument('--num_point', type=int, default=100, help='Point Number  [default: 100]')
+# parser.add_argument('--log_dir', default='log', help='Log dir [default: log in logs]')
+parser.add_argument('--log_dir', default='1MLab', help='Log dir [default: log in logs]')
+# parser.add_argument('--num_point', type=int, default=100, help='Point Number  [default: 100]')
+parser.add_argument('--num_point', type=int, default=50, help='Point Number  [default: 50]')
 parser.add_argument('--max_epoch', type=int, default=200, help='Epoch to run [default: 200]')
 parser.add_argument('--batch_size', type=int, default=32, help='Batch Size during training [default: 32]')
 parser.add_argument('--learning_rate', type=float, default=1e-3, help='Initial learning rate [default: 0.001]')
+# parser.add_argument('--learning_rate', type=float, default=1e-6, help='Initial learning rate [default: 0.000001]')
+parser.add_argument('--nevents', type=int, default=100000, help='Events to run [default: 100000]')
+
 
 parser.add_argument('--momentum', type=float, default=0.9, help='Initial learning rate [default: 0.9]')
 parser.add_argument('--optimizer', default='adam', help='adam or momentum [default: adam]')
 parser.add_argument('--decay_step', type=int, default=5000000, help='Decay step for lr decay [default: 5000000]')
 parser.add_argument('--wd', type=float, default=0.0, help='Weight Decay [Default: 0.0]')
 parser.add_argument('--decay_rate', type=float, default=0.7, help='Decay rate for lr decay [default: 0.7]')
-parser.add_argument('--data_dir', default='/pnfs/psi.ch/cms/trivcat/store/user/vmikuni/EMD_SF/', help='directory with data [default: hdf5_data]')
-parser.add_argument('--nfeat', type=int, default=13, help='Number of features PF [default: 16]')
-parser.add_argument('--ncat', type=int, default=2, help='Number of categories [default: 2]')
-parser.add_argument('--sample', default='qg', help='sample to use')
+# parser.add_argument('--data_dir', default='/pnfs/psi.ch/cms/trivcat/store/user/vmikuni/EMD_SF/', help='directory with data [default: hdf5_data]')
+parser.add_argument('--data_dir', default='/uscms/home/bonillaj/nobackup/h5samples_ULv1/', help='directory with data [default: hdf5_data]')
+parser.add_argument('--nfeat', type=int, default=13, help='Number of features PF [default: 13]')
+parser.add_argument('--ncat', type=int, default=6, help='Number of categories [default: 6]')
+# parser.add_argument('--ncat', type=int, default=2, help='Number of categories [default: 2]')
+# parser.add_argument('--sample', default='qg', help='sample to use')
+parser.add_argument('--sample', default='best', help='sample to use')
 parser.add_argument('--simple', action='store_true', default=False,help='Use simplified model')
 
 FLAGS = parser.parse_args()
@@ -58,11 +78,29 @@ MOMENTUM = FLAGS.momentum
 OPTIMIZER = FLAGS.optimizer
 DECAY_STEP = FLAGS.decay_step
 DECAY_RATE = FLAGS.decay_rate
+# BIGBATCH_SIZE = 10016
+BIGBATCH_SIZE = BATCH_SIZE * 500
+NUM_EVENTS = FLAGS.nevents
+# NUM_EVENTS = -1
+# NUM_EVENTS = 500000
+# NUM_EVENTS = 1000000
+# NUM_EVENTS = 1000
+if (NUM_EVENTS > 0):
+    if (NUM_EVENTS < BIGBATCH_SIZE): BIGBATCH_SIZE = NUM_EVENTS # Make sure a batch is not larger than nevents 
+
+    batchRemain = NUM_EVENTS % BATCH_SIZE
+    if batchRemain != 0:  NUM_EVENTS += (BATCH_SIZE - batchRemain) # Make sure nevts is divisible by batch size
+
+    bigbatchRemain = NUM_EVENTS % BIGBATCH_SIZE
+    if bigbatchRemain != 0: NUM_EVENTS += (BIGBATCH_SIZE - bigbatchRemain) # Add events to get even batches
+
 
 MODEL_FILE = os.path.join(BASE_DIR, '..', 'models',FLAGS.model+'.py')
-LOG_DIR = os.path.join('../logs',FLAGS.log_dir)
+LOG_DIR = os.path.join('../logs/',FLAGS.log_dir)
+print("\nLOG DIR: " + LOG_DIR + "\n")
 
 if not os.path.exists(LOG_DIR): os.makedirs(LOG_DIR)
+if not os.path.exists(LOG_DIR+"/epochs/"): os.makedirs(LOG_DIR+"/epochs/")
 os.system('cp %s %s' % (MODEL_FILE, LOG_DIR)) # bkp of model def
 os.system('cp train_transformer.py %s' % (LOG_DIR)) # bkp of train procedure
 LOG_FOUT = open(os.path.join(LOG_DIR, 'log_train.txt'), 'w')
@@ -78,20 +116,45 @@ HOSTNAME = socket.gethostname()
 EARLY_TOLERANCE=15
 multi = False
 
-if SAMPLE == 'qg':
-    TRAIN_FILE = os.path.join(DATA_DIR, 'train_PYTHIA.h5')
-    TEST_FILE = os.path.join(DATA_DIR, 'test_PYTHIA.h5')
-elif SAMPLE == 'top':    
-    TRAIN_FILE = os.path.join(DATA_DIR, 'train_ttbar.h5')
-    TEST_FILE = os.path.join(DATA_DIR, 'evaluate_ttbar.h5')
+# scale = "newBEST_Basic"
 
-elif SAMPLE == 'multi':
+if SAMPLE == 'best':
     multi = True
-    TRAIN_FILE = os.path.join(DATA_DIR, 'train_multi_100P_Jedi.h5')
-    TEST_FILE = os.path.join(DATA_DIR, 'test_multi_100P_Jedi.h5')
+    # TRAIN_FILE = [os.path.join(DATA_DIR, mySamp+'Sample_2017_BESTinputs_train_flattened_standardized.h5') for mySamp in ["WW","ZZ","HH","TT","QCD","BB"]]
+    # TEST_FILE  = [os.path.join(DATA_DIR, mySamp+'Sample_2017_BESTinputs_validation_flattened_standardized.h5') for mySamp in ["WW","ZZ","HH","TT","QCD","BB"]]
+    # TRAIN_FILE = [os.path.join(DATA_DIR, mySamp+'Sample_2017_BESTinputs_train_flattened_'+scale+'.h5') for mySamp in ["WW","ZZ","HH","TT","BB","QCD"]]
+    # TEST_FILE  = [os.path.join(DATA_DIR, mySamp+'Sample_2017_BESTinputs_validation_flattened_'+scale+'.h5') for mySamp in ["WW","ZZ","HH","TT","BB","QCD"]]
+    TRAIN_FILE = [os.path.join(DATA_DIR, mySamp+'Sample_2017_BESTinputs_train_flattened.h5') for mySamp in ["WW","ZZ","HH","TT","BB","QCD"]]
+    TEST_FILE  = [os.path.join(DATA_DIR, mySamp+'Sample_2017_BESTinputs_validation_flattened.h5') for mySamp in ["WW","ZZ","HH","TT","BB","QCD"]]
 else:
     sys.exit("ERROR: SAMPLE NOT FOUND")
     
+def progress_bar(batchesRan, batchesTotal, batchBegin, timeAvg):
+    # Event Progress:
+    eventsRan   = batchesRan*BATCH_SIZE
+    eventsTotal = batchesTotal*BATCH_SIZE
+    eventString = str(eventsRan) + " / " + str(eventsTotal)
+    
+    batchRatio  = float(batchesRan) / float(batchesTotal) 
+    ratioString = "(" + str(batchRatio * 100.)[:4] + "%) "
+
+    # Create the progress bar:
+    progN   = int(batchRatio * 30)
+    arrowN  = (progN>1) and (progN<30)
+    equalN  = progN - arrowN
+    periodN = 30 - progN 
+    progString = " [" + "="*equalN + ">"*arrowN + "."*periodN + "] "
+
+    # Calculate ETA:
+    batchTime  = time.time() - batchBegin
+    new_timeAvg = timeAvg + ( (batchTime - timeAvg)/float(batchesRan) ) # Add value to average
+    etaSeconds = new_timeAvg * float(batchesTotal - batchesRan)
+    etaString  = "ETA: " + str(timedelta(seconds = int(etaSeconds))) # int gets rid of microseconds
+    
+
+    print("\r" + eventString + progString + ratioString + etaString, end='\t')
+    return new_timeAvg
+
 
 
 def log_string(out_str):
@@ -133,7 +196,8 @@ def train():
             tf.summary.scalar('bn_decay', bn_decay)
             print("--- Get model and loss")
 
-       
+            print(tf.__version__)
+
             if FLAGS.simple:
                 pred,att1,att2,att3 = MODEL.get_model_simple(pointclouds_pl,mask_pl, 
                                                              is_training=is_training,
@@ -167,7 +231,7 @@ def train():
 
             
             # Add ops to save and restore all the variables.
-            saver = tf.train.Saver()
+            saver = tf.train.Saver(max_to_keep = 0)
         
         # Create a session
         config = tf.ConfigProto()
@@ -211,23 +275,44 @@ def train():
         earlytol = 0
 
         for epoch in range(MAX_EPOCH):
-            log_string('**** EPOCH %03d ****' % (epoch))
-            sys.stdout.flush()            
+            preEpochTime = time.time()
             
+            log_string('**** EPOCH %03d ****' % (epoch))
+            print(FLAGS.log_dir)
+            sys.stdout.flush()            
+
             train_one_epoch(sess, ops, train_writer) 
+            
+            trainEpochTime = time.time()
+            timeTaken = (trainEpochTime - preEpochTime) / 3600.
+            timeMessage = "Trained Epoch, took "+ str(timeTaken)[:5] + " hours to complete.\n"
+            print(timeMessage)
+
             lss = eval_one_epoch(sess, ops, test_writer)
+
+            evalEpochTime = time.time()
+            timeTaken = (evalEpochTime - trainEpochTime) / 3600.
+            timeMessage = "Evaluated Epoch, took "+ str(timeTaken)[:5] + " hours to complete.\n"
+            print(timeMessage)
+
+            # Save the model each epoch for debugging
+            epoch_path = os.path.join(LOG_DIR,'epochs',str(epoch))
+            save_path_all = saver.save(sess, os.path.join(epoch_path, 'model.ckpt'), global_step=epoch)
+
             cond = lss < early_stop 
             if cond:
                 early_stop = lss
                 earlytol = 0
                 # Save the variables to disk.
+
                 save_path = saver.save(sess, os.path.join(LOG_DIR, 'model.ckpt'))
-                log_string("Model saved in file: %s" % save_path)
+                log_string("Model saved in file: %s" % LOG_DIR)
             else:            
                 if earlytol >= EARLY_TOLERANCE:
                     break
                 else:
-                    print("No improvement for {0} epochs".format(earlytol))
+                    # print("No improvement for {0} epochs".format(earlytol))
+                    log_string("No improvement for {0} epochs".format(earlytol))
                     earlytol+=1
             
 
@@ -242,48 +327,93 @@ def train_one_epoch(sess, ops, train_writer):
     is_training=True
     
     loss_sum = 0
+    #this loads all the data, then works on it in batches.
+    ###############Implement a randomizer for epoch for non all stats. dont pull the same events each time.
+    #               load Nevents total, divide by NUM_EVENTS to run, get random int from ratio, mult to startbigidx
+    # (10001 // 1000 = 10, get random int from 0-10, then mult with start_bigidx, get endbigidx by adding BIGBatch to startbigidx or just using startbigidx  )
+    # SIMPLER IMPLEMENTATION: first line of for loop: bigBatchidx + randint (note: if ratio = N, randint= 0->N-1)
+    # check with johan if the events are ordered by pT. if so, this will need to be more complicated.  
 
-    current_data_pl, current_label = provider.load_h5(TRAIN_FILE,'class')    
-    #,nevts=5e5
-    if multi:
-        current_label=np.argmax(current_label,axis=-1)
-    current_data_pl, current_label, _ = provider.shuffle_data(current_data_pl, np.squeeze(current_label))
+    file_bigSize = provider.getNevents(TRAIN_FILE[0])
+    max_BigBatches = int(file_bigSize // BIGBATCH_SIZE)
+    if NUM_EVENTS == -1: num_bigBatches = max_BigBatches  
+    else:                num_bigBatches = int(NUM_EVENTS // BIGBATCH_SIZE)
+    
+    # batchDiff will shift the batch index, calling differ, but the same amount of, events from the h5 files
+    # This is 0 if num_BigBatches = max_BigBatches, no effect in this case (allStats)
+    batchDiff = max_BigBatches - num_bigBatches
+    # Produces an integer 0 <= batchShift <= batchDiff
+    batchShift = random.randint(0,batchDiff)
+    # print(file_bigSize, BIGBATCH_SIZE, max_BigBatches, num_bigBatches)
+    # print(batchDiff, batchShift, range(batchShift, num_bigBatches + batchShift))
 
-
-    file_size = current_data_pl.shape[0]
-    num_batches = file_size // BATCH_SIZE
+    # file_size = current_data_pl.shape[0]
+    num_batches = (BIGBATCH_SIZE * NUM_CLASSES) // BATCH_SIZE
     #num_batches = 4
+    batchesTotal = num_bigBatches * num_batches
+    # eventsTotal  = batchesTotal * BATCH_SIZE
+
+    # if NUM_EVENTS == -1: file_bigSize = provider.getNevents(TRAIN_FILE[0]) 
+    # else:           file_bigSize = NUM_EVENTS 
+    # num_bigBatches = int(file_bigSize // BIGBATCH_SIZE)
+
+    # # file_size = current_data_pl.shape[0]
+    # num_batches = (BIGBATCH_SIZE * NUM_CLASSES) // BATCH_SIZE
+    # #num_batches = 4
+    # eventsTotal = num_bigBatches * num_batches * BATCH_SIZE
+
     log_string(str(datetime.now()))
-    for batch_idx in range(num_batches):
+    batchesRan = 0
+    timeAvg = 0
+    # for bigBatch_idx in range(num_bigBatches):
+    for bigBatch_idx in range(batchShift, num_bigBatches + batchShift):
+        start_bigidx = bigBatch_idx * (BIGBATCH_SIZE)
+        end_bigidx = (bigBatch_idx+1) * (BIGBATCH_SIZE)
+    
+        current_data_pl, current_label = provider.load_h5BEST(TRAIN_FILE, NUM_POINT, start_bigidx, end_bigidx)
+
+        current_data_pl, current_label, _ = provider.shuffle_data(current_data_pl, np.squeeze(current_label))
+        
+        for batch_idx in range(num_batches):
+            batchBegin = time.time()
+
+            start_idx = batch_idx * (BATCH_SIZE)
+            end_idx = (batch_idx+1) * (BATCH_SIZE)
+            batch_data_pl, batch_label = get_batch(current_data_pl, current_label,start_idx, end_idx)
+            mask_padded = batch_data_pl[:,:,2]==0
+
+
             
-        start_idx = batch_idx * (BATCH_SIZE)
-        end_idx = (batch_idx+1) * (BATCH_SIZE)
-        batch_data_pl, batch_label = get_batch(current_data_pl, current_label,start_idx, end_idx)
-        mask_padded = batch_data_pl[:,:,2]==0
+            feed_dict = {             
+                ops['pointclouds_pl']: batch_data_pl,
+                ops['labels_pl']: batch_label,
+                ops['mask_pl']: mask_padded.astype(float),
+                ops['is_training']: is_training,
+            }
+            
+            train_op = 'train_op'
+            attention = 'attention'
+            loss = 'loss'
+            # print(loss)
+            summary, step, _, loss,attention = sess.run([ops['merged'], ops['step'],
+                                                        ops['train_op'],
+                                                        ops['loss'],ops['attention']
+                                                    ],
+                                                        feed_dict=feed_dict)
+            # print(loss, np.mean(loss))
+            #print(attention)
+            train_writer.add_summary(summary, step)
+            loss_sum += np.mean(loss)
 
-
-        
-        feed_dict = {             
-            ops['pointclouds_pl']: batch_data_pl,
-            ops['labels_pl']: batch_label,
-            ops['mask_pl']: mask_padded.astype(float),
-            ops['is_training']: is_training,
-        }
-        
-        train_op = 'train_op'
-        attention = 'attention'
-        loss = 'loss'
-        summary, step, _, loss,attention = sess.run([ops['merged'], ops['step'],
-                                                     ops['train_op'],
-                                                     ops['loss'],ops['attention']
-                                                 ],
-                                                    feed_dict=feed_dict)
-
-        #print(attention)
-        train_writer.add_summary(summary, step)
-        loss_sum += np.mean(loss)
-
-    log_string('mean loss: %f' % (loss_sum / float(num_batches)))
+            # Keep track of progress
+            if batchesRan == 0: print("Training Events...")
+            batchesRan += 1
+            timeAvg = progress_bar(batchesRan, batchesTotal, batchBegin, timeAvg)
+    print("")
+    print("BatchesTotal, BatchesRan: ", batchesTotal, batchesRan)
+    print(loss_sum, batchesRan)
+    print('\n')
+    log_string('mean loss: %f' % ((loss_sum*1.0) / float(batchesRan)))
 
         
 def eval_one_epoch(sess, ops, test_writer):
@@ -292,91 +422,138 @@ def eval_one_epoch(sess, ops, test_writer):
     is_training = False
     loss_sum = 0
     y_source=[]
+    every_label=[]
 
-    current_data_pl, current_label = provider.load_h5(TEST_FILE,'class')
-    if multi:
-        current_label=np.argmax(current_label,axis=-1)
-    current_data_pl, current_label, _ = provider.shuffle_data(current_data_pl, np.squeeze(current_label))
+    file_bigSize = provider.getNevents(TEST_FILE[0])
+    max_BigBatches = int(file_bigSize // BIGBATCH_SIZE)
+    if NUM_EVENTS == -1: num_bigBatches = max_BigBatches  
+    else:                num_bigBatches = int(NUM_EVENTS // BIGBATCH_SIZE)
+    # if (NUM_EVENTS < file_bigSize) and (NUM_EVENTS > 0): file_bigSize = NUM_EVENTS 
+    # num_bigBatches = int(file_bigSize // BIGBATCH_SIZE)
 
-    file_size = current_data_pl.shape[0]
-    num_batches = file_size // (BATCH_SIZE)
+
+    # batchDiff will shift the batch index, calling differ, but the same amount of, events from the h5 files
+    # This is 0 if num_BigBatches = max_BigBatches, no effect in this case (allStats)
+    batchDiff = max_BigBatches - num_bigBatches
+    # Produces an integer 0 <= batchShift <= batchDiff
+    batchShift = random.randint(0,batchDiff)
+    # print(file_bigSize, BIGBATCH_SIZE, max_BigBatches, num_bigBatches)
+    # print(batchDiff, batchShift, range(batchShift, num_bigBatches + batchShift))
+
+    # file_size = current_data_pl.shape[0]
+    num_batches = (BIGBATCH_SIZE * NUM_CLASSES) // (BATCH_SIZE)
     #num_batches = 4
+    batchesTotal = num_bigBatches * num_batches
+    # eventsTotal  = batchesTotal * BATCH_SIZE
         
     log_string(str(datetime.now()))
     log_string('---- EPOCH %03d EVALUATION ----'%(EPOCH_CNT))
-    for batch_idx in range(num_batches):
-            
-        start_idx = batch_idx * (BATCH_SIZE)
-        end_idx = (batch_idx+1) * (BATCH_SIZE)
-        batch_data_pl, batch_label = get_batch(current_data_pl, current_label,start_idx, end_idx)
-        mask_padded = batch_data_pl[:,:,2]==0
-        
-        feed_dict = {             
-            ops['pointclouds_pl']: batch_data_pl,
-            ops['labels_pl']: batch_label,
-            ops['is_training']: is_training,
-            ops['mask_pl']: mask_padded.astype(float),
-        }
-            
-        if batch_idx ==0:
-            start_time = time.time()
-            
-        summary, step, loss,pred,lr = sess.run([ops['merged'], ops['step'],
-                                                ops['loss'],ops['pred'],
-                                                ops['learning_rate']
-                                         ],
-                                            feed_dict=feed_dict)
-        
 
-        if batch_idx ==0:
-            duration = time.time() - start_time
-            log_string("Eval time: "+str(duration)) 
-            log_string("Learning rate: "+str(lr)) 
-            #log_string("{}".format(sub_feat))
+    batchesRan = 0
+    timeAvg = 0
+    # lossList = [[] for i in range(6)]
+    # for bigBatch_idx in range(num_bigBatches):
+    for bigBatch_idx in range(batchShift, num_bigBatches + batchShift):
+
+        # print(batchesRan)
+        start_bigidx = bigBatch_idx * (BIGBATCH_SIZE)
+        end_bigidx = (bigBatch_idx+1) * (BIGBATCH_SIZE)
+    
+        current_data_pl, current_label = provider.load_h5BEST(TEST_FILE, NUM_POINT, start_bigidx, end_bigidx)
+        # current_data_pl, current_label = provider.load_h5BEST(TRAIN_FILE, NUM_POINT, start_bigidx, end_bigidx)
+        # current_data_pl, current_label = provider.load_h5BEST(TEST_FILE, NUM_POINT, start_bigidx, end_bigidx, debug=True)
+
+        current_data_pl, current_label, _ = provider.shuffle_data(current_data_pl, np.squeeze(current_label))
+
+        # for i, thisData in enumerate(current_data_pl):
+        #     thisLabel = current_label[i]
+        #     thisLoss  = lossList[i]
+
+        for batch_idx in range(num_batches):
+            batchBegin = time.time()
+
+            start_idx = batch_idx * (BATCH_SIZE)
+            end_idx = (batch_idx+1) * (BATCH_SIZE)
+            # batch_data_pl, batch_label = get_batch(thisData, thisLabel,start_idx, end_idx)
+            # if len(batch_data_pl) < 32: continue
+            batch_data_pl, batch_label = get_batch(current_data_pl, current_label,start_idx, end_idx)
+            mask_padded = batch_data_pl[:,:,2]==0
+            feed_dict = {             
+                ops['pointclouds_pl']: batch_data_pl,
+                ops['labels_pl']: batch_label,
+                ops['is_training']: is_training,
+                ops['mask_pl']: mask_padded.astype(float),
+            }
+                
+            if (batch_idx == 0) and (bigBatch_idx == 0): start_time = time.time()
+
+            loss = 'loss'
+            # print(loss)
+            summary, step, loss,pred,lr = sess.run([ops['merged'], ops['step'],
+                                                    ops['loss'],   ops['pred'],
+                                                    ops['learning_rate']
+                                                    ],
+                                                feed_dict=feed_dict)
+            # print(loss, np.mean(loss))            
+
+            if (batch_idx == 0) and (bigBatch_idx == 0):
+                duration = time.time() - start_time
+                log_string("Single Batch Eval time: "+str(duration)) 
+                log_string("Single Batch Learning rate: "+str(lr)) 
+                #log_string("{}".format(sub_feat))
 
 
-        test_writer.add_summary(summary, step)
-           
+            test_writer.add_summary(summary, step)
+            # thisLoss.append(loss)
+            loss_sum += np.mean(loss) 
+            if len(y_source)==0: 
+                y_source = np.squeeze(pred)
+                every_label = np.array(batch_label)
+            else:                
+                y_source = np.concatenate((y_source,np.squeeze(pred)),axis=0)
+                every_label = np.concatenate((every_label,batch_label), axis=0)
             
-        loss_sum += np.mean(loss)                                        
-        if len(y_source)==0:
-            y_source = np.squeeze(pred)
-        else:
-            y_source=np.concatenate((y_source,np.squeeze(pred)),axis=0)
-            
+            # Keep track of progress
+            if batchesRan == 0: print("Evaluating Events...")
+            batchesRan += 1
+            timeAvg = progress_bar(batchesRan, batchesTotal, batchBegin, timeAvg)
+    print("")
+    print("BatchesTotal, BatchesRan: ", batchesTotal, batchesRan)
+    print(loss_sum, batchesRan)
+    print('\n')            
 
-    if multi:
-        name_convert = {
-            0:'Gluon',
-            1:'Quark',
-            2:'Z',
-            3:'W',
-            4:'Top',
-            
-        }
-        label = current_label[:num_batches*(BATCH_SIZE)]
-        for isample in np.unique(label):            
-            fpr, tpr, _ = metrics.roc_curve(label==isample, y_source[:,isample], pos_label=1)    
-            log_string("Class: {}, AUC: {}".format(name_convert[isample],metrics.auc(fpr, tpr)))
-            bineff = np.argmax(fpr>0.1)
-            log_string('SOURCE: effS at {0} effB = {1}'.format(tpr[bineff],fpr[bineff]))
-        log_string('mean loss: %f' % (loss_sum*1.0 / float(num_batches)))
-    else:
-        fpr, tpr, _ = metrics.roc_curve(current_label[:num_batches*(BATCH_SIZE)], y_source[:,1], pos_label=1)    
-        log_string("AUC: {}".format(metrics.auc(fpr, tpr)))
 
-        bineff = np.argmax(tpr>0.3)
+    name_convert = { 0:'W', 1:'Z', 2:'H', 3:'T', 4:'B', 5:'QCD' }
+    
+    # log_string("Loss List:")
+    # for i, loss in enumerate(lossList): log_string(str(name_convert[i]) +': '+ str(loss))
+    # log_string("Loss Means:")
+    # for i, loss in enumerate(lossList): log_string(str(name_convert[i]) +': '+ str(np.mean(loss)))
 
-        log_string('SOURCE: 1/effB at {0} effS = {1}'.format(tpr[bineff],1.0/fpr[bineff]))
-        log_string('mean loss: %f' % (loss_sum*1.0 / float(num_batches)))
+    #fix evaluate code
+    #add SV
+    #add frames
+    # label = every_label[:batchesRan*(BATCH_SIZE)]
+
+
+    for isample in np.unique(every_label):
+        fpr, tpr, _ = metrics.roc_curve(every_label==isample, y_source[:,isample], pos_label=1)    
+        log_string("Class: {}, AUC: {}".format(name_convert[isample],metrics.auc(fpr, tpr)))
+        bineff = np.argmax(fpr>0.1)
+        log_string('SOURCE: effS at {0} effB = {1}'.format(tpr[bineff],fpr[bineff]))
+    log_string('mean loss: %f' % ((loss_sum*1.0) / float(batchesRan)))
+
     EPOCH_CNT += 1
 
 
-    return loss_sum*1.0 / float(num_batches)
+    return ((loss_sum*1.0) / float(batchesRan))
     
 
 
 if __name__ == "__main__":
     log_string('pid: %s'%(str(os.getpid())))
     train()
+
+    timeTaken = (time.time() - startTime) / 86400.
+    log_string("\nFinished PCT, "+ FLAGS.log_dir + " total time was " + str( timeTaken )[:5] + "days to complete.\n")
     LOG_FOUT.close()

@@ -34,7 +34,7 @@ def GetLocalFeat(pc,scname,outsize,is_training,bn_decay):
 
 
 
-def GetSelfAtt(pc,mask,scname,outsize,is_training,bn_decay):
+def GetSelfAtt(pc,mask,scname,outsize,is_training,bn_decay, bnflag):
     '''Get the self-attention layer
     Input: 
           Point cloud with shape (batch_size,num_point,num_dims)
@@ -46,18 +46,18 @@ def GetSelfAtt(pc,mask,scname,outsize,is_training,bn_decay):
     
     query = tf_util.conv1d_nobias(pc,outsize//4,1, padding='VALID',
                                   stride=1,activation_fn=None,
-                                  bn=True, is_training=is_training,
+                                  bn=bnflag, is_training=is_training,
                                   scope=scname+'query')
     
 
     key = tf_util.conv1d_nobias(pc,outsize//4, 1, padding='VALID',
-                                stride=1,activation_fn=None,bn=True,
+                                stride=1,activation_fn=None,bn=bnflag,
                                 is_training=is_training, scope=scname+'key')
 
     key = tf.transpose(key,perm=[0,2,1]) #B,C//4,N
 
     value = tf_util.conv1d_nobias(pc, outsize, 1, padding='VALID',
-                           stride=1,activation_fn=None,bn=True,
+                           stride=1,activation_fn=None,bn=bnflag,
                            is_training=is_training, scope=scname+'value',
                            bn_decay=bn_decay)
     
@@ -83,7 +83,7 @@ def GetSelfAtt(pc,mask,scname,outsize,is_training,bn_decay):
     
     self_att = tf_util.conv1d_nobias(pc-self_att,outsize, 1, 
                               padding='VALID', stride=1,
-                              activation_fn=tf.nn.relu,bn=True, 
+                              activation_fn=tf.nn.relu,bn=bnflag, 
                               is_training=is_training, scope=scname+'att',
                               bn_decay=bn_decay)
     
@@ -144,7 +144,8 @@ def get_model_simple(point_cloud, mask,is_training, num_class,
     pc_transform = tf_util.conv1d(point_cloud, 128, 1, 
                                   padding='VALID', stride=1,
                                   activation_fn=tf.nn.relu,
-                                  bn=True, is_training=is_training,
+                                #   bn=True, is_training=is_training,
+                                  bn=False, is_training=is_training,
                                   scope=scname+'emb1', 
                                   bn_decay=bn_decay)
 
@@ -152,12 +153,13 @@ def get_model_simple(point_cloud, mask,is_training, num_class,
     pc_transform = tf_util.conv1d(pc_transform, 64, 1, 
                                   padding='VALID', stride=1,
                                   activation_fn=tf.nn.relu,
-                                  bn=True, is_training=is_training,
+                                #   bn=True, is_training=is_training,
+                                  bn=False, is_training=is_training,
                                   scope=scname+'emb2', 
                                   bn_decay=bn_decay)
     
-    self_att_1,attention1 = GetSelfAtt(tf.squeeze(pc_transform),mask,scname+'att1',64,is_training,bn_decay=bn_decay)
-    self_att_2,attention2 = GetSelfAtt(self_att_1,mask,scname+'att2',64,is_training,bn_decay=bn_decay)
+    self_att_1,attention1 = GetSelfAtt(tf.squeeze(pc_transform),mask,scname+'att1',64,is_training,bn_decay=bn_decay, bnflag=False)
+    self_att_2,attention2 = GetSelfAtt(self_att_1,mask,scname+'att2',64,is_training,bn_decay=bn_decay, bnflag=False)
     
     concat = tf.concat([
         self_att_1,
@@ -167,13 +169,15 @@ def get_model_simple(point_cloud, mask,is_training, num_class,
    
     net = tf_util.conv1d(concat, 128, 1, padding='VALID',
                          stride=1,activation_fn=tf.nn.relu,
+                        #  bn=True, is_training=is_training, 
                          bn=False, is_training=is_training, 
                          scope=scname+'concat', bn_decay=bn_decay)
 
     net = tf.reduce_mean(net, axis=1, keep_dims=True)    
     net = tf.reshape(net, [batch_size, -1]) 
 
-    net = tf_util.fully_connected(net, 64, bn=True, is_training=is_training,
+    net = tf_util.fully_connected(net, 64, bn=False, is_training=is_training,
+    # net = tf_util.fully_connected(net, 64, bn=True, is_training=is_training,
                                  activation_fn=tf.nn.relu,
                                  scope=scname+'fc1',bn_decay=bn_decay)
     net = tf_util.dropout(net, keep_prob=0.5, is_training=is_training,

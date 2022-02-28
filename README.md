@@ -18,6 +18,12 @@ First, download the data for the application you want to test:
 
 [Multiclassification dataset](https://zenodo.org/record/3602254)
 
+```bash
+/bin/bash --login
+source /cvmfs/cms-lpc.opensciencegrid.org/sl7/gpu/Setup.sh
+source activate mlenv0
+```
+
 To convert these files into the format required for the training, use the following scripts:
 
 ```bash

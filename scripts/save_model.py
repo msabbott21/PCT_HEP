@@ -21,10 +21,11 @@ import pct as MODEL
 # DEFAULT SETTINGS
 parser = argparse.ArgumentParser()
 parser.add_argument('--model_path', default='../logs', help='Model checkpoint path')
-parser.add_argument('--name', default='test', help='Output model name')
-parser.add_argument('--num_point', type=int, default=100, help='Point Number [default: 400]')
-parser.add_argument('--nfeat', type=int, default=16, help='Number of features [default: 5]')
-parser.add_argument('--ncat', type=int, default=5, help='Number of categories [default: 2]')
+# parser.add_argument('--name', default='test', help='Output model name')
+parser.add_argument('--name', default='BEST_MODEL', help='Output model name')
+parser.add_argument('--num_point', type=int, default=50, help='Point Number [default: 50]')
+parser.add_argument('--nfeat', type=int, default=13, help='Number of features [default: 13]')
+parser.add_argument('--ncat', type=int, default=6, help='Number of categories [default: 6]')
 parser.add_argument('--simple', action='store_true', default=False,help='Use simplified model')
 
 
