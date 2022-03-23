@@ -24,6 +24,10 @@ source /cvmfs/cms-lpc.opensciencegrid.org/sl7/gpu/Setup.sh
 source activate mlenv0
 ```
 
+```
+watch -n60 nvidia-smi
+```
+
 To convert these files into the format required for the training, use the following scripts:
 
 ```bash

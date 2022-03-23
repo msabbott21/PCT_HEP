@@ -8,9 +8,8 @@ Upadted by Yue Wang and Yongbin Sun
 
 import numpy as np
 import tensorflow as tf
-#import lorentz
+# import lorentz
 from math import *
-from itertools import combinations
 
 def _variable_on_cpu(name, shape, initializer, use_fp16=False, trainable=True):
   """Helper to create a Variable stored on CPU memory.
@@ -107,8 +106,6 @@ def conv1d(inputs,
     if bn:
       outputs = batch_norm_for_conv1d(outputs, is_training,
                                       bn_decay=bn_decay, scope='bn', is_dist=is_dist)
-      print('BATCHHHHHHH   1')
-      quit() 
 
     if activation_fn is not None:
       outputs = activation_fn(outputs)
@@ -164,8 +161,6 @@ def conv1d_nobias(inputs,
     if bn:
       outputs = batch_norm_for_conv1d(outputs, is_training,
                                       bn_decay=bn_decay, scope='bn', is_dist=is_dist)
-      print('BATCHHHHHHH   2')
-      quit() 
 
     if activation_fn is not None:
       outputs = activation_fn(outputs)
@@ -227,8 +222,6 @@ def conv2d_nobias(inputs,
         if bn:
             outputs = batch_norm_for_conv2d(outputs, is_training,
                                             bn_decay=bn_decay, scope='bn', is_dist=is_dist)
-            print('BATCHHHHHHH   3')
-            quit() 
 
         if activation_fn is not None:
             outputs = activation_fn(outputs)
@@ -322,8 +315,7 @@ def conv2d(inputs,
       if bn:
         outputs = batch_norm_for_conv2d(outputs, is_training,
                                         bn_decay=bn_decay, scope='bn', is_dist=is_dist,)
-        print('BATCHHHHHHH   4')
-        quit() 
+
       if activation_fn is not None:
         outputs = activation_fn(outputs)
       return outputs
@@ -365,8 +357,6 @@ def fully_connected(inputs,
      
       if bn:
           outputs = batch_norm_for_fc(outputs, is_training, bn_decay, 'bn', is_dist=is_dist,)
-          print('BATCHHHHHHH   5')
-          quit() 
       
       if activation_fn is not None:
           if activation_fn == tf.nn.softmax:
